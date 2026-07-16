@@ -1,0 +1,372 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: Arial, sans-serif;
+}
+
+.login-container {
+    display: flex;
+    height: 100vh;
+}
+
+.left-panel {
+    width: 40%;
+    background: #e8ffd8;
+
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+
+    text-align: center;
+    padding: 40px;
+}
+
+.right-panel {
+    width: 60%;
+
+    display: flex;
+    flex-direction: column;
+
+    justify-content: center;
+    align-items: center;
+}
+
+@font-face {
+    font-family: 'Hurricane';
+    src: url('./fonts/Hurricane-Regular.ttf') format('truetype');
+}
+
+.assistant-text{
+    color:#2f8d46;
+    font-size:22px;
+    font-style:italic;
+    margin: top 5px;
+    margin-bottom:20px;
+}
+.tagline h3{
+    font-style: italic;
+    font-family:'Hurricane';
+    font-size:23px;
+    color:#222;
+    margin:3px 0;      /* Less space between paragraphs */
+    line-height:1.1;   /* Reduces text height */
+    font-weight:500;
+}
+.left-panel h1 {
+    font-size: 70px;
+    color: #214d19;
+    margin: 0;
+
+    position: relative;
+    top: -10px;
+}
+.left-panel h2{
+    font-size: 70px;
+    font-weight: bold;
+    color: #214d19;
+    margin: 0;
+}
+
+.left-panel p{
+
+    font-size:30px;
+
+    margin:10px;
+}
+
+.logo-title {
+    font-size: 70px;
+    font-weight: bold;
+    color: #214d19;
+    line-height: 0.9;   /* Controls the gap */
+    margin: 15px 0;
+}
+
+.right-panel h1{
+
+    font-size:48px;
+}
+
+.right-panel p{
+
+    font-size:20px;
+
+    margin-top:15px;
+
+    color:rgb(101, 100, 100);
+}
+
+.right-panel span{
+    font-size:medium;
+}
+
+.login-card{
+
+    width:520px;
+
+    background:white;
+
+    padding:45px;
+
+    border-radius:25px;
+
+    box-shadow:0px 12px 30px rgba(0,0,0,0.15);
+
+}
+
+.login-card h1{
+
+    text-align:center;
+
+    margin-bottom:10px;
+}
+
+.subtitle{
+
+    text-align:center;
+
+    color:rgb(100, 99, 99);
+
+    margin-bottom:30px;
+}
+
+.login-card label{
+
+    display:block;
+
+    margin-top:20px;
+
+    margin-bottom:8px;
+
+    font-weight:bold;
+
+    text-align: left;
+
+    color: rgb(15, 15, 15);
+}
+
+.login-card input{
+
+    width:100%;
+
+    padding:14px;
+
+    border:1px solid lightgray;
+
+    border-radius:10px;
+
+    font-size:16px;
+}
+
+.options{
+
+    display:flex;
+
+    justify-content:space-between;
+
+    align-items:center;
+
+    margin-top:20px;
+
+    margin-bottom:25px;
+}
+
+.options div{
+
+    display:flex;
+
+    align-items:center;
+
+    gap:10px;
+
+    white-space:nowrap;
+}
+
+.options a{
+
+    text-decoration:none;
+
+    color:green;
+
+    font-weight:bold;
+}
+
+.options a:hover{
+    color:#0f5c24;
+}
+
+.login-btn{
+
+    width:100%;
+
+    padding:18px;
+
+    background:#2f944a;
+
+    color:white;
+
+    border:none;
+
+    border-radius:10px;
+
+    font-size:20px;
+
+    cursor:pointer;
+}
+
+.login-btn:hover{
+
+    background:#1c582c;
+}
+
+.input-box{
+
+    display:flex;
+
+    align-items:center;
+
+    border:1px solid lightgray;
+
+    border-radius:10px;
+
+    padding:0 12px;
+
+    margin-bottom:15px;
+}
+
+.icon{
+
+    color:rgb(129, 128, 128);
+
+    font-size:22px;
+}
+
+.input-box input{
+
+    border:none;
+
+    outline:none;
+
+    width:100%;
+
+    padding:15px;
+
+    font-size:16px;
+}
+
+/* Divider */
+
+.divider{
+
+    display:flex;
+
+    align-items:center;
+
+    margin:25px 0;
+}
+
+.divider hr{
+
+    flex:1;
+
+    border:none;
+
+    border-top:1px solid lightgray;
+}
+
+.divider span{
+
+    margin:0 15px;
+
+    color:gray;
+
+    font-size:14px;
+}
+
+/* Google Button */
+
+.google-btn{
+
+    width:100%;
+
+    display:flex;
+
+    align-items:center;
+
+    justify-content:center;
+
+    gap:10px;
+
+    padding:15px;
+
+    background:white;
+
+    border:1px solid lightgray;
+
+    border-radius:10px;
+
+    font-size:16px;
+
+    cursor:pointer;
+
+    transition:0.3s;
+
+    font-weight:600;
+}
+
+.google-btn:hover{
+
+    background:#f5f5f5;
+}
+
+.google-icon{
+
+    font-size:24px;
+}
+
+/* Sign Up Text */
+
+.signup-text{
+
+    text-align:center;
+
+    margin-top:25px;
+
+    color:rgb(106, 101, 101);
+
+}
+
+.signup-text a{
+
+    color:#258741;
+
+    text-decoration:none;
+
+    font-weight:bold;
+}
+
+.signup-text a:hover{
+
+    text-decoration:underline;
+}
+
+.logo {
+    width: 170px;
+    height: auto;
+    display: block;
+    margin-bottom: 10px;
+}
+
+.error {
+    color: red !important;
+    font-size: 12px !important;
+    margin-top: 5px;
+    margin-bottom: 10px;
+    text-align: left;
+}
+
