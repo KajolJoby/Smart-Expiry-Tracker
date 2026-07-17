@@ -1,15 +1,25 @@
 *{
-
     margin:0;
     padding:0;
     box-sizing:border-box;
-
-    font-family:Arial,sans-serif;
-
+    font-family: "Poppins", "Segoe UI", Arial, sans-serif;
 }
 
 body{
+    background: linear-gradient(135deg, #f5fbf2 0%, #eef8eb 100%);
+    color: #2f4635;
+    line-height: 1.5;
+}
 
-    background:#F5F5F5;
+button,
+input {
+    font: inherit;
+}
 
+button {
+    transition: all 0.2s ease;
+}
+
+button:hover {
+    transform: translateY(-1px);
 }

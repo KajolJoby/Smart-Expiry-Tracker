@@ -1,69 +1,60 @@
 .navbar{
-    height:80px;
+    min-height:84px;
     background:white;
-
     display:flex;
     justify-content:space-between;
     align-items:center;
-
-    padding:0 40px;
-
-    border-bottom:1px solid #ddd;
+    padding:0 36px;
+    border-bottom:1px solid #e5eee3;
 }
 
 .nav-right{
     display:flex;
     align-items:center;
-    gap:40px;
+    gap:18px;
+    flex-wrap:wrap;
+}
+
+.header-count {
+    color:#6a756e;
+    font-size:0.95rem;
+    padding:0 4px;
+    white-space:nowrap;
 }
 
 .notification{
-
     position:relative;
     font-size:24px;
     cursor:pointer;
-
 }
 
 .badge{
-
     position:absolute;
-
     top:-8px;
     right:-10px;
-
     background:red;
     color:white;
-
     width:18px;
     height:18px;
-
     border-radius:50%;
-
     display:flex;
     justify-content:center;
     align-items:center;
-
     font-size:11px;
 }
 
 .user{
-
     display:flex;
     align-items:center;
     gap:10px;
-
     cursor:pointer;
 }
 
 .username{
-
     font-size:20px;
     font-weight:500;
-
 }
 
 .down{
-
     font-size:15px;
 }
