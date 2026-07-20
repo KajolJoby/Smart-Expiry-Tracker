@@ -1,16 +1,52 @@
-# React + Vite
+# ESP8266 + Firebase product viewer
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+This folder contains a minimal setup for reading product data from Firebase Realtime Database on an ESP8266.
 
-Currently, two official plugins are available:
+## 1) Firebase setup
+1. Create a Firebase project.
+2. Enable Realtime Database.
+3. Set the database rules to allow read access for testing:
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+```json
+{
+  "rules": {
+    ".read": true,
+    ".write": true
+  }
+}
+```
 
-## React Compiler
+4. Upload sample data using the Node script:
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+```bash
+node firebase_upload_example.js
+```
 
-## Expanding the ESLint configuration
+## 2) Arduino setup
+1. Open the Arduino IDE.
+2. Install these libraries:
+   - ESP8266WiFi
+   - ESP8266HTTPClient
+   - ArduinoJson
+3. Replace the placeholders in the sketch:
+   - YOUR_WIFI_SSID
+   - YOUR_WIFI_PASSWORD
+   - YOUR_PROJECT_ID
+4. Upload the sketch to the ESP8266.
+5. Open the Serial Monitor to view the products.
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+## 3) Data structure
+The ESP8266 reads the following path:
+
+```json
+{
+  "products": {
+    "milk": {
+      "name": "Milk",
+      "quantity": "2 liters",
+      "expiryDate": "2026-07-25",
+      "status": "Expiring Soon"
+    }
+  }
+}
+```
