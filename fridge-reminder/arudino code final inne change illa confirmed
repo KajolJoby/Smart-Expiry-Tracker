@@ -13,14 +13,18 @@
     Down button: D6 -> button -> GND  (uses INPUT_PULLUP)
     Wi-Fi reset: press Up and Down together
     Wi-Fi setup button: D7 -> button -> GND (uses INPUT_PULLUP)
+    IR sensor: OUT -> D0, VCC -> 3V3, GND -> GND
+               The common IR module output is LOW when it detects an object.
     Battery: Li-ion + -> 330k resistor -> A0 -> 100k resistor -> GND
-             This divider limits a 4.2V Li-ion cell to about 0.98V at bare ESP8266 A0.
+             This divider limits a 4.2V Li-ion cell to about 0.98V at A0.
+             It is required for a NodeMCU because its A0 board input is 0-3.3V.
 
   The endpoint must return JSON in this form:
   {"items":[{"product":"Milk","expiryDate":"2026-07-20","quantity":1}]}
 
-  This sketch reads the LAN API provided by this project while Vite is running:
-  http://10.160.1.197:5175/api
+  This sketch reads the LAN API provided by this project while Vite is running.
+  Enter the computer's current LAN address during the Wi-Fi setup, for example:
+  http://192.168.1.25:5175/api
 
   The ESP8266 and the computer running Vite must be on the same Wi-Fi network.
   Do NOT expose this development API to the public internet.
@@ -37,18 +41,15 @@
 #include <ArduinoJson.h>
 #include <time.h>
 
-// LAN API. Change this only if the computer's local IP address changes.
-const char* API_BASE_ENDPOINT = "http://10.160.1.197:5175/api";
-
 constexpr char CONFIG_AP_NAME[] = "SmartFridge-Setup";
 constexpr byte DNS_PORT = 53;
-constexpr uint32_t CONFIG_MAGIC = 0x53465431; // "SFT1"
+constexpr uint32_t CONFIG_MAGIC = 0x53465432; // "SFT2"
 
 struct DeviceConfig {
   uint32_t magic;
   char wifiSsid[33];
   char wifiPassword[65];
-  char networkId[33];
+  char apiEndpoint[129];
 };
 
 DeviceConfig deviceConfig = {};
@@ -62,16 +63,17 @@ constexpr uint8_t ALERT_LED = D5;
 constexpr uint8_t UP_BUTTON = D4;
 constexpr uint8_t DOWN_BUTTON = D6;
 constexpr uint8_t WIFI_SETUP_BUTTON = D7;
+constexpr uint8_t IR_SENSOR = D0;
+constexpr uint8_t IR_DETECTED_STATE = LOW;
 
-// Battery calibration: bare ESP8266 A0 is 0-1.0V and the listed divider ratio is 4.3.
-constexpr float ADC_REFERENCE_VOLTAGE = 1.0F;
+// NodeMCU A0 board input is scaled to 0-3.3V. The external divider is 430k:100k.
+constexpr float NODEMCU_A0_FULL_SCALE_VOLTAGE = 3.30F;
 constexpr float BATTERY_DIVIDER_RATIO = 4.30F;
-constexpr float BATTERY_EMPTY_VOLTAGE = 3.20F;
-constexpr float BATTERY_FULL_VOLTAGE = 4.20F;
 
 constexpr unsigned long FETCH_INTERVAL_MS = 10000;
 constexpr unsigned long FAST_BLINK_MS = 250;
 constexpr unsigned long SLOW_BLINK_MS = 900;
+constexpr unsigned long SNOOZE_AFTER_MS = 60000;
 constexpr uint8_t MAX_ITEMS = 12;
 
 Adafruit_SSD1306 display(128, 64, &Wire, -1);
@@ -92,10 +94,14 @@ unsigned long lastDownButtonChange = 0;
 bool lastDownButtonState = HIGH;
 unsigned long lastSetupButtonChange = 0;
 bool lastSetupButtonState = HIGH;
+bool lastSyncFailed = true;
+String lastSyncStatus = "Starting sync";
+bool snoozeMode = false;
+unsigned long lastInteraction = 0;
 
 bool hasSavedConfig() {
   return deviceConfig.magic == CONFIG_MAGIC && deviceConfig.wifiSsid[0] != '\0' &&
-         deviceConfig.networkId[0] != '\0';
+         deviceConfig.apiEndpoint[0] != '\0';
 }
 
 void loadConfig() {
@@ -103,12 +109,12 @@ void loadConfig() {
   EEPROM.get(0, deviceConfig);
 }
 
-void saveConfig(const String& ssid, const String& password, const String& networkId) {
+void saveConfig(const String& ssid, const String& password, const String& apiEndpoint) {
   memset(&deviceConfig, 0, sizeof(deviceConfig));
   deviceConfig.magic = CONFIG_MAGIC;
   ssid.toCharArray(deviceConfig.wifiSsid, sizeof(deviceConfig.wifiSsid));
   password.toCharArray(deviceConfig.wifiPassword, sizeof(deviceConfig.wifiPassword));
-  networkId.toCharArray(deviceConfig.networkId, sizeof(deviceConfig.networkId));
+  apiEndpoint.toCharArray(deviceConfig.apiEndpoint, sizeof(deviceConfig.apiEndpoint));
   EEPROM.put(0, deviceConfig);
   EEPROM.commit();
 }
@@ -116,35 +122,62 @@ void saveConfig(const String& ssid, const String& password, const String& networ
 void showPortalPage() {
   const String page = R"rawliteral(
 <!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Smart Fridge Wi-Fi Setup</title><style>body{font-family:Arial;margin:2rem;max-width:420px}label,input,button{display:block;width:100%;box-sizing:border-box;margin-top:.6rem}input,button{padding:.75rem;font-size:1rem}button{background:#1677ff;border:0;color:#fff;border-radius:6px}</style>
-</head><body><h2>Smart Fridge setup</h2><p>Enter the Wi-Fi network the fridge should use and a unique network/device ID.</p>
-<form action="/save" method="post"><label>Wi-Fi name (SSID)<input name="ssid" maxlength="32" required></label>
+<title>Smart Fridge Wi-Fi Setup</title><style>body{font-family:Arial;margin:2rem;max-width:420px;color:#172033}label,input,button{display:block;width:100%;box-sizing:border-box;margin-top:.6rem}input,button{padding:.75rem;font-size:1rem}button{border:0;border-radius:6px}.primary{background:#1677ff;color:#fff}.secondary{background:#e8eef9;color:#172033}.network-results{margin:.5rem 0 1rem;max-height:230px;overflow:auto;border:1px solid #d7dfeb;border-radius:6px}.network{background:#fff;color:#172033;border-bottom:1px solid #e7ecf4;border-radius:0;text-align:left}.network:last-child{border-bottom:0}.network strong,.network span{display:block}.network span,#networkStatus{font-size:.85rem;color:#5b6880}.empty{padding:.8rem;margin:0}</style>
+</head><body><h2>Smart Fridge setup</h2><p>Choose a nearby Wi-Fi network, then enter the LAN API address of the computer running Smart Fridge.</p>
+<p id="networkStatus">Scanning nearby Wi-Fi networks...</p><button class="secondary" type="button" id="refreshNetworks">Refresh network list</button>
+<form action="/save" method="post"><label>Wi-Fi name (SSID)<input id="ssid" name="ssid" list="networkOptions" maxlength="32" autocomplete="off" required></label><datalist id="networkOptions"></datalist>
+<div class="network-results" id="networkResults" aria-live="polite"></div>
 <label>Wi-Fi password<input name="password" type="password" maxlength="64"></label>
-<label>Network / device ID<input name="networkId" maxlength="32" required placeholder="e.g. kitchen-fridge"></label>
-<button type="submit">Save and connect</button></form></body></html>)rawliteral";
+<label>API address<input name="apiEndpoint" maxlength="128" required placeholder="http://192.168.1.25:5175/api"></label>
+<button class="primary" type="submit">Save and connect</button></form>
+<script>const ssidInput=document.getElementById('ssid'),options=document.getElementById('networkOptions'),results=document.getElementById('networkResults'),status=document.getElementById('networkStatus');let networks=[];function renderNetworks(){const query=ssidInput.value.trim().toLowerCase(),matches=networks.filter(network=>network.ssid.toLowerCase().includes(query));options.replaceChildren(...matches.map(network=>{const option=document.createElement('option');option.value=network.ssid;return option;}));results.replaceChildren();if(!matches.length){const message=document.createElement('p');message.className='empty';message.textContent=query?'No nearby networks match this name.':'No Wi-Fi networks found.';results.append(message);return;}matches.forEach(network=>{const button=document.createElement('button'),name=document.createElement('strong'),detail=document.createElement('span');button.type='button';button.className='network';name.textContent=network.ssid;detail.textContent=network.rssi+' dBm · '+(network.secured?'secured':'open');button.append(name,detail);button.addEventListener('click',()=>{ssidInput.value=network.ssid;renderNetworks();ssidInput.focus();});results.append(button);});}async function refreshNetworks(){status.textContent='Scanning nearby Wi-Fi networks...';results.replaceChildren();try{const response=await fetch('/networks?'+Date.now(),{cache:'no-store'});if(!response.ok)throw new Error();const data=await response.json();networks=data.networks||[];status.textContent=networks.length+' nearby Wi-Fi network'+(networks.length===1?'':'s')+' found. Type part of a name to filter.';renderNetworks();}catch{status.textContent='Unable to scan. Tap Refresh network list to try again.';}}ssidInput.addEventListener('input',renderNetworks);document.getElementById('refreshNetworks').addEventListener('click',refreshNetworks);refreshNetworks();</script></body></html>)rawliteral";
   configServer.send(200, "text/html", page);
+}
+
+void sendNearbyNetworks() {
+  int networkCount = WiFi.scanNetworks();
+  DynamicJsonDocument response(3072);
+  JsonArray networks = response.createNestedArray("networks");
+
+  if (networkCount > 0) {
+    for (int index = 0; index < networkCount; index++) {
+      String ssid = WiFi.SSID(index);
+      if (ssid.length() == 0) continue;
+      JsonObject network = networks.createNestedObject();
+      network["ssid"] = ssid;
+      network["rssi"] = WiFi.RSSI(index);
+      network["secured"] = WiFi.encryptionType(index) != ENC_TYPE_NONE;
+    }
+  }
+  WiFi.scanDelete();
+
+  String payload;
+  serializeJson(response, payload);
+  configServer.sendHeader("Cache-Control", "no-store");
+  configServer.send(200, "application/json", payload);
 }
 
 void startConfigPortal() {
   WiFi.disconnect();
   delay(100);
-  WiFi.mode(WIFI_AP);
+  WiFi.mode(WIFI_AP_STA);
   WiFi.softAP(CONFIG_AP_NAME); // Open network: anyone nearby can complete setup.
   dnsServer.start(DNS_PORT, "*", WiFi.softAPIP());
 
   configServer.on("/save", HTTP_POST, []() {
     String ssid = configServer.arg("ssid");
     String password = configServer.arg("password");
-    String networkId = configServer.arg("networkId");
-    if (ssid.length() == 0 || networkId.length() == 0) {
-      configServer.send(400, "text/plain", "Wi-Fi name and network ID are required.");
+    String apiEndpoint = configServer.arg("apiEndpoint");
+    if (ssid.length() == 0 || !apiEndpoint.startsWith("http://")) {
+      configServer.send(400, "text/plain", "Wi-Fi name and an http:// API address are required.");
       return;
     }
-    saveConfig(ssid, password, networkId);
+    saveConfig(ssid, password, apiEndpoint);
     configServer.send(200, "text/html", "<h2>Saved</h2><p>The Smart Fridge is restarting and connecting to Wi-Fi.</p>");
     delay(1200);
     ESP.restart();
   });
+  configServer.on("/networks", HTTP_GET, sendNearbyNetworks);
   configServer.onNotFound(showPortalPage); // Captive-portal probes and all URLs show setup.
   configServer.begin();
 
@@ -177,27 +210,37 @@ bool connectWiFi() {
   return WiFi.status() == WL_CONNECTED;
 }
 
-String urlEncode(const String& text) {
-  const char* hex = "0123456789ABCDEF";
-  String encoded;
-  for (size_t i = 0; i < text.length(); i++) {
-    char c = text[i];
-    if (isalnum(c) || c == '-' || c == '_' || c == '.') encoded += c;
-    else {
-      encoded += '%';
-      encoded += hex[(c >> 4) & 0x0F];
-      encoded += hex[c & 0x0F];
-    }
+float batteryVoltage() {
+  uint32_t totalReading = 0;
+  constexpr uint8_t SAMPLE_COUNT = 8;
+  for (uint8_t sample = 0; sample < SAMPLE_COUNT; sample++) {
+    totalReading += analogRead(A0);
   }
-  return encoded;
+  float averageReading = totalReading / static_cast<float>(SAMPLE_COUNT);
+  float a0Voltage = averageReading * (NODEMCU_A0_FULL_SCALE_VOLTAGE / 1023.0F);
+  return a0Voltage * BATTERY_DIVIDER_RATIO;
 }
 
 int batteryPercent() {
-  float adcVoltage = analogRead(A0) * (ADC_REFERENCE_VOLTAGE / 1023.0F);
-  float batteryVoltage = adcVoltage * BATTERY_DIVIDER_RATIO;
-  int percent = round((batteryVoltage - BATTERY_EMPTY_VOLTAGE) * 100.0F /
-                      (BATTERY_FULL_VOLTAGE - BATTERY_EMPTY_VOLTAGE));
-  return constrain(percent, 0, 100);
+  const float voltage = batteryVoltage();
+  const float curve[][2] = {
+    {4.20F, 100.0F}, {4.10F, 90.0F}, {4.00F, 75.0F}, {3.90F, 55.0F},
+    {3.80F, 35.0F}, {3.70F, 15.0F}, {3.50F, 5.0F}, {3.20F, 0.0F},
+  };
+
+  if (voltage >= curve[0][0]) return 100;
+  for (uint8_t point = 1; point < sizeof(curve) / sizeof(curve[0]); point++) {
+    if (voltage >= curve[point][0]) {
+      float upperVoltage = curve[point - 1][0];
+      float upperPercent = curve[point - 1][1];
+      float lowerVoltage = curve[point][0];
+      float lowerPercent = curve[point][1];
+      float percent = lowerPercent + (voltage - lowerVoltage) * (upperPercent - lowerPercent) /
+                                           (upperVoltage - lowerVoltage);
+      return constrain(round(percent), 0, 100);
+    }
+  }
+  return 0;
 }
 
 time_t expiryTime(const String& dateText) {
@@ -230,6 +273,10 @@ uint8_t highestAlertLevel() {
 }
 
 void updateAlertLed() {
+  if (snoozeMode) {
+    digitalWrite(ALERT_LED, LOW);
+    return;
+  }
   uint8_t level = highestAlertLevel();
   if (level == 0) {
     digitalWrite(ALERT_LED, LOW);
@@ -246,12 +293,55 @@ void drawBattery() {
   int width = map(percent, 0, 100, 0, 15);
   if (width > 0) display.fillRect(105, 4, width, 4, SSD1306_WHITE);
   display.setTextSize(1);
-  display.setCursor(81, 2);
+  display.setCursor(78, 2);
   display.print(percent);
   display.print('%');
 }
 
+void showCarboxSplash() {
+  for (uint8_t frame = 0; frame < 10; frame++) {
+    display.clearDisplay();
+    display.setTextColor(SSD1306_WHITE);
+    display.setTextSize(2);
+    display.setCursor(28, 19);
+    display.print("CARBOX");
+    display.drawRoundRect(18, 47, 92, 7, 3, SSD1306_WHITE);
+    display.fillRoundRect(20, 49, (frame + 1) * 8, 3, 1, SSD1306_WHITE);
+    display.display();
+    delay(200);
+  }
+}
+
+void enterSnoozeMode() {
+  snoozeMode = true;
+  digitalWrite(ALERT_LED, LOW);
+  display.clearDisplay();
+  display.display();
+  display.ssd1306_command(SSD1306_DISPLAYOFF);
+}
+
+void wakeFromSnooze() {
+  snoozeMode = false;
+  lastInteraction = millis();
+  display.ssd1306_command(SSD1306_DISPLAYON);
+}
+
+void updateSnoozeMode() {
+  if (!snoozeMode && millis() - lastInteraction >= SNOOZE_AFTER_MS) {
+    enterSnoozeMode();
+  }
+}
+
+void handleIrSensor() {
+  bool objectDetected = digitalRead(IR_SENSOR) == IR_DETECTED_STATE;
+  if (!objectDetected) return;
+
+  if (snoozeMode) wakeFromSnooze();
+  lastInteraction = millis();
+}
+
 void drawDisplay() {
+  if (snoozeMode) return;
   display.clearDisplay();
   display.setTextColor(SSD1306_WHITE);
   display.setTextSize(1);
@@ -262,9 +352,9 @@ void drawDisplay() {
 
   if (itemCount == 0) {
     display.setCursor(8, 29);
-    display.print("No products found");
+    display.print(lastSyncFailed ? "Product sync failed" : "No products found");
     display.setCursor(8, 43);
-    display.print("Checking every 10 sec");
+    display.print(lastSyncFailed ? lastSyncStatus.substring(0, 20) : "Checking every 10 sec");
     display.display();
     return;
   }
@@ -304,26 +394,44 @@ void drawDisplay() {
 }
 
 bool fetchProducts() {
-  if (WiFi.status() != WL_CONNECTED && !connectWiFi()) return false;
+  if (WiFi.status() != WL_CONNECTED && !connectWiFi()) {
+    lastSyncFailed = true;
+    lastSyncStatus = "Wi-Fi not connected";
+    return false;
+  }
 
   WiFiClient client;
   HTTPClient http;
   http.setTimeout(8000);
-  String endpoint = String(API_BASE_ENDPOINT) + "?networkId=" + urlEncode(deviceConfig.networkId);
-  if (!http.begin(client, endpoint)) return false;
+  String endpoint = deviceConfig.apiEndpoint;
+  if (!http.begin(client, endpoint)) {
+    lastSyncFailed = true;
+    lastSyncStatus = "Invalid API address";
+    return false;
+  }
   int httpCode = http.GET();
   if (httpCode != HTTP_CODE_OK) {
     http.end();
+    lastSyncFailed = true;
+    lastSyncStatus = "HTTP error " + String(httpCode);
     return false;
   }
 
   DynamicJsonDocument json(4096);
   DeserializationError error = deserializeJson(json, http.getStream());
   http.end();
-  if (error) return false;
+  if (error) {
+    lastSyncFailed = true;
+    lastSyncStatus = "Invalid API response";
+    return false;
+  }
 
   JsonArray incoming = json["items"].as<JsonArray>();
-  if (incoming.isNull()) return false;
+  if (incoming.isNull()) {
+    lastSyncFailed = true;
+    lastSyncStatus = "No items in response";
+    return false;
+  }
   itemCount = min((size_t)MAX_ITEMS, incoming.size());
   for (uint8_t i = 0; i < itemCount; i++) {
     items[i].product = incoming[i]["product"] | "Unnamed product";
@@ -331,6 +439,8 @@ bool fetchProducts() {
     items[i].quantity = incoming[i]["quantity"] | 1;
   }
   if (selectedItem >= itemCount) selectedItem = 0;
+  lastSyncFailed = false;
+  lastSyncStatus = "Synced";
   return true;
 }
 
@@ -338,29 +448,45 @@ void handleNavigationButtons() {
   bool upState = digitalRead(UP_BUTTON);
   bool downState = digitalRead(DOWN_BUTTON);
 
+  if (snoozeMode) {
+    if (upState == LOW || downState == LOW) wakeFromSnooze();
+    lastUpButtonState = upState;
+    lastDownButtonState = downState;
+    return;
+  }
+
   // D4 + D6 together always takes priority over menu navigation.
   // It opens setup mode without erasing the old settings until new settings are saved.
   if (upState == LOW && downState == LOW) {
+    lastInteraction = millis();
     startConfigPortal();
   }
 
   if (lastUpButtonState == HIGH && upState == LOW && millis() - lastUpButtonChange > 180) {
     if (itemCount) selectedItem = (selectedItem + itemCount - 1) % itemCount;
     lastUpButtonChange = millis();
+    lastInteraction = millis();
   }
   lastUpButtonState = upState;
 
   if (lastDownButtonState == HIGH && downState == LOW && millis() - lastDownButtonChange > 180) {
     if (itemCount) selectedItem = (selectedItem + 1) % itemCount;
     lastDownButtonChange = millis();
+    lastInteraction = millis();
   }
   lastDownButtonState = downState;
 }
 
 void handleWiFiSetupButton() {
   bool state = digitalRead(WIFI_SETUP_BUTTON);
+  if (snoozeMode) {
+    if (state == LOW) wakeFromSnooze();
+    lastSetupButtonState = state;
+    return;
+  }
   if (lastSetupButtonState == HIGH && state == LOW && millis() - lastSetupButtonChange > 180) {
     lastSetupButtonChange = millis();
+    lastInteraction = millis();
     startConfigPortal();
   }
   lastSetupButtonState = state;
@@ -371,14 +497,10 @@ void setup() {
   pinMode(UP_BUTTON, INPUT_PULLUP);
   pinMode(DOWN_BUTTON, INPUT_PULLUP);
   pinMode(WIFI_SETUP_BUTTON, INPUT_PULLUP);
+  pinMode(IR_SENSOR, INPUT);
   Wire.begin(OLED_SDA, OLED_SCL);
   display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
-  display.clearDisplay();
-  display.setTextColor(SSD1306_WHITE);
-  display.setTextSize(1);
-  display.setCursor(12, 28);
-  display.print("Connecting WiFi...");
-  display.display();
+  showCarboxSplash();
 
   loadConfig();
   if (!hasSavedConfig() || !connectWiFi()) startConfigPortal();
@@ -388,11 +510,14 @@ void setup() {
   while (time(nullptr) < 100000) delay(200);
   fetchProducts();
   lastFetch = millis();
+  lastInteraction = millis();
 }
 
 void loop() {
   handleNavigationButtons();
   handleWiFiSetupButton();
+  handleIrSensor();
+  updateSnoozeMode();
   if (millis() - lastFetch >= FETCH_INTERVAL_MS) {
     fetchProducts();
     lastFetch = millis();
