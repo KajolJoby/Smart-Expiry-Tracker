@@ -1,11 +1,9 @@
 /*
   Smart Expiry Tracker - ESP8266 / NodeMCU
-
   Arduino Library Manager libraries:
     - Adafruit GFX Library
     - Adafruit SSD1306
     - ArduinoJson (version 6)
-
   Wiring (NodeMCU / ESP-12E):
     OLED SSD1306 I2C: SDA -> D2, SCL -> D1, VCC -> 3V3, GND -> GND
     LED: anode -> D5 through a 220 ohm resistor; cathode -> GND
@@ -18,18 +16,15 @@
     Battery: Li-ion + -> 330k resistor -> A0 -> 100k resistor -> GND
              This divider limits a 4.2V Li-ion cell to about 0.98V at A0.
              It is required for a NodeMCU because its A0 board input is 0-3.3V.
-
-  The endpoint must return JSON in this form:
+  The endpoint must return JSON in this form+
+  :
   {"items":[{"product":"Milk","expiryDate":"2026-07-20","quantity":1}]}
-
   This sketch reads the LAN API provided by this project while Vite is running.
   Enter the computer's current LAN address during the Wi-Fi setup, for example:
   http://192.168.1.25:5175/api
-
   The ESP8266 and the computer running Vite must be on the same Wi-Fi network.
   Do NOT expose this development API to the public internet.
 */
-
 #include <ESP8266WiFi.h>
 #include <ESP8266HTTPClient.h>
 #include <ESP8266WebServer.h>
@@ -40,22 +35,18 @@
 #include <Adafruit_SSD1306.h>
 #include <ArduinoJson.h>
 #include <time.h>
-
 constexpr char CONFIG_AP_NAME[] = "SmartFridge-Setup";
 constexpr byte DNS_PORT = 53;
 constexpr uint32_t CONFIG_MAGIC = 0x53465432; // "SFT2"
-
 struct DeviceConfig {
   uint32_t magic;
   char wifiSsid[33];
   char wifiPassword[65];
   char apiEndpoint[129];
 };
-
 DeviceConfig deviceConfig = {};
 ESP8266WebServer configServer(80);
 DNSServer dnsServer;
-
 // ESP8266 pins
 constexpr uint8_t OLED_SDA = D2;
 constexpr uint8_t OLED_SCL = D1;
@@ -65,25 +56,20 @@ constexpr uint8_t DOWN_BUTTON = D6;
 constexpr uint8_t WIFI_SETUP_BUTTON = D7;
 constexpr uint8_t IR_SENSOR = D0;
 constexpr uint8_t IR_DETECTED_STATE = LOW;
-
 // NodeMCU A0 board input is scaled to 0-3.3V. The external divider is 430k:100k.
 constexpr float NODEMCU_A0_FULL_SCALE_VOLTAGE = 3.30F;
 constexpr float BATTERY_DIVIDER_RATIO = 4.30F;
-
 constexpr unsigned long FETCH_INTERVAL_MS = 10000;
 constexpr unsigned long FAST_BLINK_MS = 250;
 constexpr unsigned long SLOW_BLINK_MS = 900;
 constexpr unsigned long SNOOZE_AFTER_MS = 60000;
 constexpr uint8_t MAX_ITEMS = 12;
-
 Adafruit_SSD1306 display(128, 64, &Wire, -1);
-
 struct FridgeItem {
   String product;
   String expiryDate;  // YYYY-MM-DD
   int quantity;
 };
-
 FridgeItem items[MAX_ITEMS];
 uint8_t itemCount = 0;
 uint8_t selectedItem = 0;
@@ -98,17 +84,14 @@ bool lastSyncFailed = true;
 String lastSyncStatus = "Starting sync";
 bool snoozeMode = false;
 unsigned long lastInteraction = 0;
-
 bool hasSavedConfig() {
   return deviceConfig.magic == CONFIG_MAGIC && deviceConfig.wifiSsid[0] != '\0' &&
          deviceConfig.apiEndpoint[0] != '\0';
 }
-
 void loadConfig() {
   EEPROM.begin(sizeof(DeviceConfig));
   EEPROM.get(0, deviceConfig);
 }
-
 void saveConfig(const String& ssid, const String& password, const String& apiEndpoint) {
   memset(&deviceConfig, 0, sizeof(deviceConfig));
   deviceConfig.magic = CONFIG_MAGIC;
@@ -118,7 +101,6 @@ void saveConfig(const String& ssid, const String& password, const String& apiEnd
   EEPROM.put(0, deviceConfig);
   EEPROM.commit();
 }
-
 void showPortalPage() {
   const String page = R"rawliteral(
 <!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -133,12 +115,10 @@ void showPortalPage() {
 <script>const ssidInput=document.getElementById('ssid'),options=document.getElementById('networkOptions'),results=document.getElementById('networkResults'),status=document.getElementById('networkStatus');let networks=[];function renderNetworks(){const query=ssidInput.value.trim().toLowerCase(),matches=networks.filter(network=>network.ssid.toLowerCase().includes(query));options.replaceChildren(...matches.map(network=>{const option=document.createElement('option');option.value=network.ssid;return option;}));results.replaceChildren();if(!matches.length){const message=document.createElement('p');message.className='empty';message.textContent=query?'No nearby networks match this name.':'No Wi-Fi networks found.';results.append(message);return;}matches.forEach(network=>{const button=document.createElement('button'),name=document.createElement('strong'),detail=document.createElement('span');button.type='button';button.className='network';name.textContent=network.ssid;detail.textContent=network.rssi+' dBm · '+(network.secured?'secured':'open');button.append(name,detail);button.addEventListener('click',()=>{ssidInput.value=network.ssid;renderNetworks();ssidInput.focus();});results.append(button);});}async function refreshNetworks(){status.textContent='Scanning nearby Wi-Fi networks...';results.replaceChildren();try{const response=await fetch('/networks?'+Date.now(),{cache:'no-store'});if(!response.ok)throw new Error();const data=await response.json();networks=data.networks||[];status.textContent=networks.length+' nearby Wi-Fi network'+(networks.length===1?'':'s')+' found. Type part of a name to filter.';renderNetworks();}catch{status.textContent='Unable to scan. Tap Refresh network list to try again.';}}ssidInput.addEventListener('input',renderNetworks);document.getElementById('refreshNetworks').addEventListener('click',refreshNetworks);refreshNetworks();</script></body></html>)rawliteral";
   configServer.send(200, "text/html", page);
 }
-
 void sendNearbyNetworks() {
   int networkCount = WiFi.scanNetworks();
   DynamicJsonDocument response(3072);
   JsonArray networks = response.createNestedArray("networks");
-
   if (networkCount > 0) {
     for (int index = 0; index < networkCount; index++) {
       String ssid = WiFi.SSID(index);
@@ -150,20 +130,17 @@ void sendNearbyNetworks() {
     }
   }
   WiFi.scanDelete();
-
   String payload;
   serializeJson(response, payload);
   configServer.sendHeader("Cache-Control", "no-store");
   configServer.send(200, "application/json", payload);
 }
-
 void startConfigPortal() {
   WiFi.disconnect();
   delay(100);
   WiFi.mode(WIFI_AP_STA);
   WiFi.softAP(CONFIG_AP_NAME); // Open network: anyone nearby can complete setup.
   dnsServer.start(DNS_PORT, "*", WiFi.softAPIP());
-
   configServer.on("/save", HTTP_POST, []() {
     String ssid = configServer.arg("ssid");
     String password = configServer.arg("password");
@@ -180,7 +157,6 @@ void startConfigPortal() {
   configServer.on("/networks", HTTP_GET, sendNearbyNetworks);
   configServer.onNotFound(showPortalPage); // Captive-portal probes and all URLs show setup.
   configServer.begin();
-
   display.clearDisplay();
   display.setTextSize(1);
   display.setCursor(0, 14);
@@ -192,14 +168,12 @@ void startConfigPortal() {
   display.setCursor(0, 54);
   display.print("Then open any website");
   display.display();
-
   while (true) {
     dnsServer.processNextRequest();
     configServer.handleClient();
     delay(2);
   }
 }
-
 bool connectWiFi() {
   WiFi.mode(WIFI_STA);
   WiFi.begin(deviceConfig.wifiSsid, deviceConfig.wifiPassword);
@@ -209,7 +183,6 @@ bool connectWiFi() {
   }
   return WiFi.status() == WL_CONNECTED;
 }
-
 float batteryVoltage() {
   uint32_t totalReading = 0;
   constexpr uint8_t SAMPLE_COUNT = 8;
@@ -220,14 +193,12 @@ float batteryVoltage() {
   float a0Voltage = averageReading * (NODEMCU_A0_FULL_SCALE_VOLTAGE / 1023.0F);
   return a0Voltage * BATTERY_DIVIDER_RATIO;
 }
-
 int batteryPercent() {
   const float voltage = batteryVoltage();
   const float curve[][2] = {
     {4.20F, 100.0F}, {4.10F, 90.0F}, {4.00F, 75.0F}, {3.90F, 55.0F},
     {3.80F, 35.0F}, {3.70F, 15.0F}, {3.50F, 5.0F}, {3.20F, 0.0F},
   };
-
   if (voltage >= curve[0][0]) return 100;
   for (uint8_t point = 1; point < sizeof(curve) / sizeof(curve[0]); point++) {
     if (voltage >= curve[point][0]) {
@@ -242,7 +213,6 @@ int batteryPercent() {
   }
   return 0;
 }
-
 time_t expiryTime(const String& dateText) {
   int year, month, day;
   if (sscanf(dateText.c_str(), "%d-%d-%d", &year, &month, &day) != 3) return 0;
@@ -253,14 +223,30 @@ time_t expiryTime(const String& dateText) {
   expiry.tm_hour = 12;  // Avoid daylight-saving/date-boundary problems.
   return mktime(&expiry);
 }
-
 int daysUntilExpiry(const FridgeItem& item) {
   time_t expiry = expiryTime(item.expiryDate);
   if (expiry == 0) return 9999;
   time_t now = time(nullptr);
   return floor(difftime(expiry, now) / 86400.0F);
 }
-
+// Dates are YYYY-MM-DD, so lexical order is chronological order. Products
+// without a date stay at the end of the list.
+bool expiresBefore(const FridgeItem& left, const FridgeItem& right) {
+  if (left.expiryDate.length() == 0) return false;
+  if (right.expiryDate.length() == 0) return true;
+  return left.expiryDate < right.expiryDate;
+}
+void sortItemsByExpiryDate() {
+  for (uint8_t i = 0; i + 1 < itemCount; i++) {
+    for (uint8_t j = 0; j + 1 < itemCount - i; j++) {
+      if (expiresBefore(items[j + 1], items[j])) {
+        FridgeItem temporary = items[j];
+        items[j] = items[j + 1];
+        items[j + 1] = temporary;
+      }
+    }
+  }
+}
 // 2 = expired, 1 = expiring within three days, 0 = normal
 uint8_t highestAlertLevel() {
   uint8_t level = 0;
@@ -271,7 +257,6 @@ uint8_t highestAlertLevel() {
   }
   return level;
 }
-
 void updateAlertLed() {
   if (snoozeMode) {
     digitalWrite(ALERT_LED, LOW);
@@ -285,19 +270,31 @@ void updateAlertLed() {
   unsigned long interval = level == 2 ? FAST_BLINK_MS : SLOW_BLINK_MS;
   digitalWrite(ALERT_LED, (millis() / interval) % 2 ? HIGH : LOW);
 }
-
 void drawBattery() {
   int percent = batteryPercent();
   display.drawRect(103, 2, 19, 8, SSD1306_WHITE);
   display.fillRect(122, 4, 2, 4, SSD1306_WHITE);
   int width = map(percent, 0, 100, 0, 15);
   if (width > 0) display.fillRect(105, 4, width, 4, SSD1306_WHITE);
-  display.setTextSize(1);
-  display.setCursor(78, 2);
-  display.print(percent);
-  display.print('%');
 }
-
+void drawExpiredWarning(uint8_t x, uint8_t y) {
+  display.fillTriangle(x, y + 13, x + 7, y, x + 14, y + 13, SSD1306_WHITE);
+  display.setTextColor(SSD1306_BLACK);
+  display.setTextSize(1);
+  display.setCursor(x + 4, y + 4);
+  display.print('!');
+  display.setTextColor(SSD1306_WHITE);
+}
+void printBoldProduct(const String& product) {
+  String visibleName = product.substring(0, 10);
+  const int characterWidth = 12;  // Default Adafruit font at text size 2.
+  int x = max(0, (128 - static_cast<int>(visibleName.length()) * characterWidth) / 2);
+  display.setTextSize(2);
+  display.setCursor(x, 14);
+  display.print(visibleName);
+  display.setCursor(x + 1, 14);  // A second pass makes the built-in font bold.
+  display.print(visibleName);
+}
 void showCarboxSplash() {
   for (uint8_t frame = 0; frame < 10; frame++) {
     display.clearDisplay();
@@ -311,7 +308,6 @@ void showCarboxSplash() {
     delay(200);
   }
 }
-
 void enterSnoozeMode() {
   snoozeMode = true;
   digitalWrite(ALERT_LED, LOW);
@@ -319,87 +315,68 @@ void enterSnoozeMode() {
   display.display();
   display.ssd1306_command(SSD1306_DISPLAYOFF);
 }
-
 void wakeFromSnooze() {
   snoozeMode = false;
   lastInteraction = millis();
   display.ssd1306_command(SSD1306_DISPLAYON);
 }
-
 void updateSnoozeMode() {
   if (!snoozeMode && millis() - lastInteraction >= SNOOZE_AFTER_MS) {
     enterSnoozeMode();
   }
 }
-
 void handleIrSensor() {
   bool objectDetected = digitalRead(IR_SENSOR) == IR_DETECTED_STATE;
   if (!objectDetected) return;
-
   if (snoozeMode) wakeFromSnooze();
   lastInteraction = millis();
 }
-
 void drawDisplay() {
   if (snoozeMode) return;
   display.clearDisplay();
   display.setTextColor(SSD1306_WHITE);
-  display.setTextSize(1);
-  display.setCursor(0, 2);
-  display.print("SMART FRIDGE");
   drawBattery();
-  display.drawLine(0, 12, 127, 12, SSD1306_WHITE);
-
   if (itemCount == 0) {
-    display.setCursor(8, 29);
+    display.setCursor(8, 26);
     display.print(lastSyncFailed ? "Product sync failed" : "No products found");
-    display.setCursor(8, 43);
+    display.setCursor(8, 42);
     display.print(lastSyncFailed ? lastSyncStatus.substring(0, 20) : "Checking every 10 sec");
     display.display();
     return;
   }
-
   const FridgeItem& item = items[selectedItem];
   int days = daysUntilExpiry(item);
-  bool blinkVisible = highestAlertLevel() == 0 ||
-                      (millis() / (days < 0 ? FAST_BLINK_MS : SLOW_BLINK_MS)) % 2;
-
+  bool blinkVisible = (millis() / (days < 0 ? FAST_BLINK_MS : SLOW_BLINK_MS)) % 2;
+  printBoldProduct(item.product);
   display.setTextSize(1);
-  display.setCursor(2, 17);
-  display.print('>');              // Arrow shows the selected menu entry.
-  display.setCursor(12, 17);
-  display.print(selectedItem + 1);
-  display.print('/');
-  display.print(itemCount);
-  display.setCursor(45, 17);
-  display.print(item.product.substring(0, 13));
-
-  display.setTextSize(2);
-  display.setCursor(7, 31);
-  display.print(item.quantity);
-  display.setTextSize(1);
-  display.print(" item(s)");
-
-  display.setCursor(7, 49);
-  if (days < 0 && blinkVisible) {
-    display.print("EXPIRED - remove it!");
-  } else if (days <= 3 && blinkVisible) {
+  if (days < 0) {
+    if (blinkVisible) {
+      drawExpiredWarning(8, 37);
+      display.setCursor(30, 40);
+      display.print("EXPIRED");
+    }
+    display.setCursor(30, 53);
+    display.print("Remove product");
+  } else if (days <= 3) {
+    display.setCursor(8, 42);
     display.print("Use soon: ");
     display.print(days == 0 ? "today" : String(days) + " day(s)");
-  } else if (days > 3) {
+    display.setCursor(8, 54);
+    display.print("Expiry: ");
+    display.print(item.expiryDate);
+  } else {
+    display.setCursor(8, 46);
     display.print("Expiry: ");
     display.print(item.expiryDate);
   }
   display.display();
 }
-
 bool fetchProducts() {
   if (WiFi.status() != WL_CONNECTED && !connectWiFi()) {
     lastSyncFailed = true;
     lastSyncStatus = "Wi-Fi not connected";
     return false;
   }
-
   WiFiClient client;
   HTTPClient http;
   http.setTimeout(8000);
@@ -416,7 +393,6 @@ bool fetchProducts() {
     lastSyncStatus = "HTTP error " + String(httpCode);
     return false;
   }
-
   DynamicJsonDocument json(4096);
   DeserializationError error = deserializeJson(json, http.getStream());
   http.end();
@@ -425,7 +401,6 @@ bool fetchProducts() {
     lastSyncStatus = "Invalid API response";
     return false;
   }
-
   JsonArray incoming = json["items"].as<JsonArray>();
   if (incoming.isNull()) {
     lastSyncFailed = true;
@@ -438,37 +413,33 @@ bool fetchProducts() {
     items[i].expiryDate = incoming[i]["expiryDate"] | "";
     items[i].quantity = incoming[i]["quantity"] | 1;
   }
+  sortItemsByExpiryDate();
   if (selectedItem >= itemCount) selectedItem = 0;
   lastSyncFailed = false;
   lastSyncStatus = "Synced";
   return true;
 }
-
 void handleNavigationButtons() {
   bool upState = digitalRead(UP_BUTTON);
   bool downState = digitalRead(DOWN_BUTTON);
-
   if (snoozeMode) {
     if (upState == LOW || downState == LOW) wakeFromSnooze();
     lastUpButtonState = upState;
     lastDownButtonState = downState;
     return;
   }
-
   // D4 + D6 together always takes priority over menu navigation.
   // It opens setup mode without erasing the old settings until new settings are saved.
   if (upState == LOW && downState == LOW) {
     lastInteraction = millis();
     startConfigPortal();
   }
-
   if (lastUpButtonState == HIGH && upState == LOW && millis() - lastUpButtonChange > 180) {
     if (itemCount) selectedItem = (selectedItem + itemCount - 1) % itemCount;
     lastUpButtonChange = millis();
     lastInteraction = millis();
   }
   lastUpButtonState = upState;
-
   if (lastDownButtonState == HIGH && downState == LOW && millis() - lastDownButtonChange > 180) {
     if (itemCount) selectedItem = (selectedItem + 1) % itemCount;
     lastDownButtonChange = millis();
@@ -476,7 +447,6 @@ void handleNavigationButtons() {
   }
   lastDownButtonState = downState;
 }
-
 void handleWiFiSetupButton() {
   bool state = digitalRead(WIFI_SETUP_BUTTON);
   if (snoozeMode) {
@@ -491,7 +461,6 @@ void handleWiFiSetupButton() {
   }
   lastSetupButtonState = state;
 }
-
 void setup() {
   pinMode(ALERT_LED, OUTPUT);
   pinMode(UP_BUTTON, INPUT_PULLUP);
@@ -501,7 +470,6 @@ void setup() {
   Wire.begin(OLED_SDA, OLED_SCL);
   display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
   showCarboxSplash();
-
   loadConfig();
   if (!hasSavedConfig() || !connectWiFi()) startConfigPortal();
   configTime(0, 0, "pool.ntp.org", "time.nist.gov");
@@ -512,7 +480,6 @@ void setup() {
   lastFetch = millis();
   lastInteraction = millis();
 }
-
 void loop() {
   handleNavigationButtons();
   handleWiFiSetupButton();
