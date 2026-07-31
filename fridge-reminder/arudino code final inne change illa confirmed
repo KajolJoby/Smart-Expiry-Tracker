@@ -8,7 +8,7 @@
     OLED SSD1306 I2C: SDA -> D2, SCL -> D1, VCC -> 3V3, GND -> GND
     LED: anode -> D5 through a 220 ohm resistor; cathode -> GND
     Up button: D4 -> button -> GND    (uses INPUT_PULLUP)
-    Down button: D6 -> button -> GND  (uses INPUT_PULLUP)
+    Down button: D6 -> button -> GND  (uses INPUT_PULLUP; hold to delete selected product)
     Wi-Fi reset: press Up and Down together
     Wi-Fi setup button: D7 -> button -> GND (uses INPUT_PULLUP)
     IR sensor: OUT -> D0, VCC -> 3V3, GND -> GND
@@ -18,7 +18,7 @@
              It is required for a NodeMCU because its A0 board input is 0-3.3V.
   The endpoint must return JSON in this form+
   :
-  {"items":[{"product":"Milk","expiryDate":"2026-07-20","quantity":1}]}
+  {"items":[{"id":"abc123","product":"Milk","expiryDate":"2026-07-20","quantity":1}]}
   This sketch reads the LAN API provided by this project while Vite is running.
   Enter the computer's current LAN address during the Wi-Fi setup, for example:
   http://192.168.1.25:5175/api
@@ -63,9 +63,11 @@ constexpr unsigned long FETCH_INTERVAL_MS = 10000;
 constexpr unsigned long FAST_BLINK_MS = 250;
 constexpr unsigned long SLOW_BLINK_MS = 900;
 constexpr unsigned long SNOOZE_AFTER_MS = 60000;
+constexpr unsigned long DELETE_HOLD_MS = 1800;
 constexpr uint8_t MAX_ITEMS = 12;
 Adafruit_SSD1306 display(128, 64, &Wire, -1);
 struct FridgeItem {
+  String id;
   String product;
   String expiryDate;  // YYYY-MM-DD
   int quantity;
@@ -78,6 +80,8 @@ unsigned long lastUpButtonChange = 0;
 bool lastUpButtonState = HIGH;
 unsigned long lastDownButtonChange = 0;
 bool lastDownButtonState = HIGH;
+unsigned long downButtonPressedAt = 0;
+bool downLongPressHandled = false;
 unsigned long lastSetupButtonChange = 0;
 bool lastSetupButtonState = HIGH;
 bool lastSyncFailed = true;
@@ -247,6 +251,57 @@ void sortItemsByExpiryDate() {
     }
   }
 }
+String apiPath(const String& path) {
+  String endpoint = deviceConfig.apiEndpoint;
+  if (endpoint.endsWith("/") && path.startsWith("/")) return endpoint + path.substring(1);
+  if (!endpoint.endsWith("/") && !path.startsWith("/")) return endpoint + "/" + path;
+  return endpoint + path;
+}
+void removeLocalItem(uint8_t itemIndex) {
+  if (itemIndex >= itemCount) return;
+  for (uint8_t i = itemIndex; i + 1 < itemCount; i++) {
+    items[i] = items[i + 1];
+  }
+  itemCount--;
+  if (selectedItem >= itemCount) selectedItem = 0;
+}
+bool deleteSelectedItem() {
+  if (itemCount == 0 || selectedItem >= itemCount) return false;
+  const String id = items[selectedItem].id;
+  if (id.length() == 0) {
+    lastSyncFailed = true;
+    lastSyncStatus = "Missing item id";
+    return false;
+  }
+  if (WiFi.status() != WL_CONNECTED && !connectWiFi()) {
+    lastSyncFailed = true;
+    lastSyncStatus = "Wi-Fi not connected";
+    return false;
+  }
+
+  WiFiClient client;
+  HTTPClient http;
+  http.setTimeout(8000);
+  if (!http.begin(client, apiPath("/items/" + id))) {
+    lastSyncFailed = true;
+    lastSyncStatus = "Invalid API address";
+    return false;
+  }
+
+  int httpCode = http.sendRequest("DELETE");
+  http.end();
+  if (httpCode != HTTP_CODE_OK) {
+    lastSyncFailed = true;
+    lastSyncStatus = "Delete error " + String(httpCode);
+    return false;
+  }
+
+  removeLocalItem(selectedItem);
+  lastSyncFailed = false;
+  lastSyncStatus = "Deleted product";
+  lastFetch = millis();
+  return true;
+}
 // 2 = expired, 1 = expiring within three days, 0 = normal
 uint8_t highestAlertLevel() {
   uint8_t level = 0;
@@ -336,6 +391,9 @@ void drawDisplay() {
   display.clearDisplay();
   display.setTextColor(SSD1306_WHITE);
   drawBattery();
+  display.setTextSize(1);
+  display.setCursor(0, 2);
+  display.print("Hold D6 delete");
   if (itemCount == 0) {
     display.setCursor(8, 26);
     display.print(lastSyncFailed ? "Product sync failed" : "No products found");
@@ -409,6 +467,7 @@ bool fetchProducts() {
   }
   itemCount = min((size_t)MAX_ITEMS, incoming.size());
   for (uint8_t i = 0; i < itemCount; i++) {
+    items[i].id = incoming[i]["id"] | "";
     items[i].product = incoming[i]["product"] | "Unnamed product";
     items[i].expiryDate = incoming[i]["expiryDate"] | "";
     items[i].quantity = incoming[i]["quantity"] | 1;
@@ -426,6 +485,8 @@ void handleNavigationButtons() {
     if (upState == LOW || downState == LOW) wakeFromSnooze();
     lastUpButtonState = upState;
     lastDownButtonState = downState;
+    downButtonPressedAt = 0;
+    downLongPressHandled = false;
     return;
   }
   // D4 + D6 together always takes priority over menu navigation.
@@ -440,8 +501,23 @@ void handleNavigationButtons() {
     lastInteraction = millis();
   }
   lastUpButtonState = upState;
+
   if (lastDownButtonState == HIGH && downState == LOW && millis() - lastDownButtonChange > 180) {
-    if (itemCount) selectedItem = (selectedItem + 1) % itemCount;
+    downButtonPressedAt = millis();
+    downLongPressHandled = false;
+    lastDownButtonChange = millis();
+    lastInteraction = millis();
+  }
+  if (downState == LOW && downButtonPressedAt > 0 && !downLongPressHandled &&
+      millis() - downButtonPressedAt >= DELETE_HOLD_MS) {
+    deleteSelectedItem();
+    downLongPressHandled = true;
+    lastInteraction = millis();
+  }
+  if (lastDownButtonState == LOW && downState == HIGH && millis() - lastDownButtonChange > 180) {
+    if (!downLongPressHandled && itemCount) selectedItem = (selectedItem + 1) % itemCount;
+    downButtonPressedAt = 0;
+    downLongPressHandled = false;
     lastDownButtonChange = millis();
     lastInteraction = millis();
   }
@@ -493,3 +569,6 @@ void loop() {
   drawDisplay();
   delay(35);
 }
+
+
+// this code has been executed and the program has been successfully executed and the product has been submitted , we are currently  been selected to execute another project about a new rower.
