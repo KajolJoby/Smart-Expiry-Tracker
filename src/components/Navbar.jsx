@@ -1,34 +1,21 @@
 import "./Navbar.css";
-import { FaBell, FaChevronDown } from "react-icons/fa";
+import HeaderDropdown from "./HeaderDropdown";
 
-function Navbar({ userName }) {
+function Navbar({ notificationsCount, notifications, onOpenProfile, onOpenSettings, user, onLogout }) {
   return (
     <div className="navbar">
-
       <div></div>
 
       <div className="nav-right">
-
-        <div className="notification">
-
-          <FaBell />
-
-          <span className="badge">0</span>
-
-        </div>
-
-        <div className="user">
-
-          <span className="username">
-            {userName}
-          </span>
-
-          <FaChevronDown className="down" />
-
-        </div>
-
+        <HeaderDropdown
+          notifications={notifications}
+          onOpenProfile={onOpenProfile}
+          onOpenSettings={onOpenSettings}
+          user={user}
+          onLogout={onLogout}
+        />
+        <span className="header-count">{notificationsCount} total alerts</span>
       </div>
-
     </div>
   );
 }
