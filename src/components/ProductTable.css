@@ -1,127 +1,59 @@
-.table-container {
-  margin-top: 30px;
-  background: white;
-  border-radius: 20px;
-  overflow: hidden;
-  box-shadow: 0 5px 15px rgba(0, 0, 0, .05);
+.table-container{
+    margin-top:24px;
+    background:white;
+    border-radius:18px;
+    overflow:hidden;
+    box-shadow:0 8px 24px rgba(47, 70, 53, 0.08);
+    border:1px solid #e9f3e7;
 }
 
-table {
-  width: 100%;
-  border-collapse: collapse;
+table{
+    width:100%;
+    border-collapse:collapse;
 }
 
-thead {
-  background: #fdfdfd;
+thead{
+    background:#f4fbf2;
 }
 
-th {
-  text-align: left;
-  padding: 20px 22px;
-  font-size: 15px;
-  font-weight: 700;
-  color: #555555;
-  border-bottom: 1.5px solid #ededed;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
+th{
+    text-align:left;
+    padding:16px 20px;
+    font-size:15px;
+    font-weight:700;
+    color:#2e8b57;
+    border-bottom:1px solid #e3efe0;
 }
 
-td {
-  padding: 18px 22px;
-  border-bottom: 1px solid #f3f3f3;
-  font-size: 15px;
-  color: #333333;
+td{
+    padding:16px 20px;
+    border-bottom:1px solid #f0f5ee;
+    font-size:15px;
+    color:#45604b;
 }
 
-tr:last-child td {
-  border-bottom: none;
+.empty-table{
+    text-align:center;
+    color:gray;
+    padding:60px;
+    font-size:18px;
 }
 
-tr:hover td {
-  background-color: #fcfdfe;
+.remove-item {
+    border: 0;
+    background: #fff0ee;
+    color: #c4473b;
+    padding: 7px 10px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 700;
 }
 
-.product-name {
-  font-weight: 600;
-  color: #1b4332;
-}
+.app.dark .remove-item { background: #422722; color: #ffb2a8; }
 
-.product-qty {
-  color: #666666;
+@media (max-width: 680px) {
+    .table-container { overflow-x: auto; border-radius: 14px; }
+    table { min-width: 620px; }
+    th, td { padding: 13px 14px; }
 }
-
-.empty-table {
-  text-align: center;
-  color: #888888;
-  padding: 60px;
-  font-size: 16px;
-}
-
-.urgent-days {
-  color: #d32f2f;
-  font-weight: 600;
-}
-
-/* Badge Styles */
-.status-badge {
-  display: inline-block;
-  padding: 6px 12px;
-  border-radius: 20px;
-  font-size: 13px;
-  font-weight: 700;
-  text-align: center;
-}
-
-.status-safe {
-  background-color: #e8f5e9;
-  color: #2e7d32;
-}
-
-.status-expiring-soon {
-  background-color: #fff3e0;
-  color: #ef6c00;
-}
-
-.status-expired {
-  background-color: #ffebee;
-  color: #c62828;
-}
-
-/* Actions Styles */
-.actions-cell {
-  display: flex;
-  gap: 10px;
-}
-
-.action-btn {
-  background: none;
-  border: none;
-  font-size: 16px;
-  padding: 8px;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.edit-btn {
-  color: #1976d2;
-  background-color: #e3f2fd;
-}
-
-.edit-btn:hover {
-  background-color: #1976d2;
-  color: white;
-}
-
-.delete-btn {
-  color: #d32f2f;
-  background-color: #ffebee;
-}
-
-.delete-btn:hover {
-  background-color: #d32f2f;
-  color: white;
-}

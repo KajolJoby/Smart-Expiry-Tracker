@@ -1,10 +1,6 @@
 import "./DashboardCards.css";
 
-function DashboardCards({ items = [] }) {
-  const totalItems = items.length;
-  const expiredSoon = items.filter(item => item.status === "Expiring Soon").length;
-  const expired = items.filter(item => item.status === "Expired").length;
-
+function DashboardCards({ totalItems, soonExpiring, expiredItems }) {
   return (
     <div className="cards">
 
@@ -13,14 +9,14 @@ function DashboardCards({ items = [] }) {
         <h1>{totalItems}</h1>
       </div>
 
-      <div className="card expired-soon-card">
+      <div className="card">
         <h3>Expired Soon</h3>
-        <h1>{expiredSoon}</h1>
+        <h1>{soonExpiring}</h1>
       </div>
 
-      <div className="card expired-card">
+      <div className="card">
         <h3>Expired Item</h3>
-        <h1>{expired}</h1>
+        <h1>{expiredItems}</h1>
       </div>
 
     </div>
